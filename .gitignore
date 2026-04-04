@@ -3,3 +3,5 @@ data/*.jpg
 data/*.json
 data/*.txt
 data/*.csv
+dataset_split/*
+dataset_split/*.jpg
