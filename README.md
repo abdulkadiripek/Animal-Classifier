@@ -1,58 +1,155 @@
-# Animal Image Classifier (Transfer Learning with MobileNetV2)
+# Animal Image Classifier
 
-This repository contains an end-to-end image classification workflow built with PyTorch and torchvision.  
-The current pipeline trains a multi-class animal classifier using transfer learning on top of MobileNetV2.
+End-to-end multi-class animal image classification using transfer learning with PyTorch and MobileNetV2.
 
-Although one notebook in the repository is named Facial_Emotion_Recognition.ipynb, the active training workflow shown in Animal-Classifier.ipynb is focused on classifying animal categories.
+This repository trains a classifier that predicts animal categories from RGB images. The active workflow is implemented in `Animal-Classifier.ipynb`.
 
 ## Table of Contents
 
-1. Project Overview  
-2. Features  
-3. Repository Structure  
-4. Dataset and Class Labels  
-5. Model Architecture  
-6. Training and Evaluation Pipeline  
-7. Inference Pipeline  
-8. Requirements  
-9. Environment Setup  
-10. How to Run the Project  
-11. Recommended Improvements  
-12. Troubleshooting  
-13. Reproducibility Notes  
-14. FAQ  
-15. Acknowledgments
+1. Project Goal
+2. End-to-End Architecture
+3. Data Layer
+4. Model Layer
+5. Training and Evaluation Flow
+6. Inference Flow
+7. Repository Structure
+8. Tech Stack
+9. Setup
+10. How to Run
+11. Results You Should Track
+12. Design Decisions
+13. Known Limitations
+14. Recommended Next Steps
+15. Troubleshooting
+16. FAQ
 
-## 1) Project Overview
+## 1) Project Goal
 
-The goal of this project is to build a reliable image classifier that can identify animal species/classes from RGB images. The project uses:
+The main objective is to build a practical, lightweight image classifier that can distinguish among multiple animal classes such as Bear, Cat, Dog, Elephant, Zebra, and others.
 
-- PyTorch for model training and inference
-- torchvision for datasets, transforms, and pretrained backbones
-- MobileNetV2 pretrained weights for efficient transfer learning
-- split-folders for train/test splitting
+The project emphasizes:
 
-The high-level flow is:
+- Transfer learning for fast convergence on limited data
+- A reproducible folder-based dataset workflow
+- A clear training loop (loss + accuracy tracking)
+- Easy single-image prediction for demos
 
-1. Prepare dataset folders under animal_data.
-2. Create train/test splits under dataset_split.
-3. Build dataloaders with model-compatible transforms.
-4. Load pretrained MobileNetV2 and replace the classifier head.
-5. Train and evaluate.
-6. Run prediction on custom images.
+## 2) End-to-End Architecture
 
-## 2) Features
+The pipeline is organized as a simple ML system with clear stages:
 
-- Transfer learning with a lightweight, fast architecture (MobileNetV2)
-- Automatic preprocessing pipeline using pretrained model transforms
-- Clear train/test loop implementation (loss + accuracy)
-- Custom single-image prediction helper
-- Notebook-based workflow for experimentation
-- CPU/GPU device handling
+1. Raw images are stored per class in `animal_data/`.
+2. The dataset is split into train/test (and optionally validation) under `dataset_split/`.
+3. `ImageFolder` + `DataLoader` build batched tensors with model-compatible transforms.
+4. A pretrained MobileNetV2 backbone is loaded.
+5. The classification head is replaced to match the number of classes.
+6. The model is trained with cross-entropy loss and AdamW.
+7. Evaluation is performed each epoch on held-out data.
+8. A prediction helper performs inference on new images.
 
-## 3) Repository Structure
+High-level data flow:
 
-Below is the expected structure used by the notebook workflow:
+```text
+animal_data/ (raw class folders)
+		  |
+		  v
+dataset_split/ (train/test[/val])
+		  |
+		  v
+ImageFolder + Transforms + DataLoader
+		  |
+		  v
+MobileNetV2 (pretrained backbone + custom classifier)
+		  |
+		  +--> Training loop (backprop, optimizer step)
+		  |
+		  +--> Evaluation loop (loss/accuracy)
+		  |
+		  v
+Single-image inference (predicted class + confidence)
+```
+
+## 3) Data Layer
+
+### 3.1 Dataset Format
+
+The dataset uses a directory-per-class structure:
+
+```text
+animal_data/
+  Bear/
+  Bird/
+  Cat/
+  ...
+  Zebra/
+```
+
+Class labels are automatically inferred by `torchvision.datasets.ImageFolder`.
+
+### 3.2 Data Splitting Strategy
+
+- Splitting is handled with `split-folders`.
+- Output is generated under `dataset_split/`.
+- `dataset_split/` is treated as generated data and should remain out of version control.
+
+### 3.3 Input Preprocessing
+
+Transforms are aligned with pretrained MobileNetV2 expectations (size/normalization). This keeps input distribution consistent with ImageNet-pretrained features and improves transfer performance.
+
+## 4) Model Layer
+
+### 4.1 Backbone
+
+- Architecture: MobileNetV2
+- Initialization: pretrained ImageNet weights
+- Benefit: strong feature extractor with low compute cost
+
+### 4.2 Transfer Learning Strategy
+
+1. Freeze backbone parameters.
+2. Replace final classifier layer with a new `Linear` layer sized to `num_classes`.
+3. Train only the head first.
+4. Optionally unfreeze deeper blocks later for fine-tuning.
+
+This strategy gives stable training and good baseline accuracy without requiring large compute resources.
+
+## 5) Training and Evaluation Flow
+
+The notebook contains modular training utilities:
+
+- `create_dataloader`: builds train/test dataloaders
+- `train_step`: one epoch of forward + backward passes
+- `test_step`: one evaluation epoch
+- `train`: full multi-epoch orchestration and metric collection
+
+Core configuration (current defaults):
+
+- Loss: `CrossEntropyLoss`
+- Optimizer: `AdamW`
+- Batch size: `128`
+- Epochs: `10`
+
+Tracked metrics:
+
+- `train_loss`
+- `train_acc`
+- `test_loss`
+- `test_acc`
+
+## 6) Inference Flow
+
+`transform_predict` runs single-image inference:
+
+1. Load image with PIL.
+2. Apply the same transform pipeline used in training.
+3. Add batch dimension and move tensor to the selected device.
+4. Run model in eval/inference mode.
+5. Convert logits to probabilities with softmax.
+6. Return top prediction and confidence score.
+
+This provides a fast qualitative check for real images outside the dataset.
+
+## 7) Repository Structure
 
 ```text
 .
@@ -62,122 +159,31 @@ Below is the expected structure used by the notebook workflow:
 ├── animal_data/
 │   ├── Bear/
 │   ├── Bird/
-│   ├── Cat/
 │   ├── ...
 │   └── Zebra/
 └── dataset_split/
 	 ├── train/
-	 │   ├── Bear/
-	 │   ├── Bird/
-	 │   ├── ...
-	 │   └── Zebra/
-	 └── test/
-		  ├── Bear/
-		  ├── Bird/
-		  ├── ...
-		  └── Zebra/
+	 ├── test/
+	 └── val/   (optional in your workflow)
 ```
 
-Important note:
+Notes:
 
-- dataset_split is generated data and is ignored in git (see .gitignore).
-- Keep your raw source images in animal_data class folders.
+- `Animal-Classifier.ipynb` is the primary notebook for this animal classification pipeline.
+- `Facial_Emotion_Recognition.ipynb` exists in the repository, but the current documented pipeline focuses on animals.
 
-## 4) Dataset and Class Labels
+## 8) Tech Stack
 
-The notebook assumes a folder-per-class dataset where each class is a directory under animal_data.
-
-Example classes in this repository include:
-
-- Bear
-- Bird
-- Cat
-- Cow
-- Deer
-- Dog
-- Dolphin
-- Elephant
-- Giraffe
-- Horse
-- Kangaroo
-- Lion
-- Panda
-- Tiger
-- Zebra
-
-The class order is discovered by torchvision.datasets.ImageFolder and stored as class_names.
-
-## 5) Model Architecture
-
-The model setup follows transfer learning best practices:
-
-1. Load pretrained MobileNetV2 weights.
-2. Freeze all backbone parameters.
-3. Replace classifier with a new Linear layer sized to number of classes.
-4. Train only the new classifier head (or optionally unfreeze later for fine-tuning).
-
-Why MobileNetV2?
-
-- Efficient and lightweight
-- Strong pretrained features on ImageNet
-- Good speed/accuracy trade-off for many practical tasks
-
-## 6) Training and Evaluation Pipeline
-
-The notebook defines:
-
-- create_dataloader: builds train/test DataLoader objects
-- train_step: one training epoch over the train dataloader
-- test_step: one evaluation epoch over the test dataloader
-- train: full epoch loop and metric logging
-
-Tracked metrics:
-
-- train_loss
-- train_acc
-- test_loss
-- test_acc
-
-Current defaults in notebook:
-
-- Optimizer: AdamW
-- Loss: CrossEntropyLoss
-- Batch size: 128
-- Epochs: 10
-
-You can tune these based on your hardware and dataset size.
-
-## 7) Inference Pipeline
-
-A helper function (transform_predict) is used to run single-image inference:
-
-1. Load image with PIL
-2. Apply the same preprocessing transform used during training
-3. Run forward pass in inference mode
-4. Convert logits to probabilities using softmax
-5. Show image with predicted class and confidence score
-
-This is suitable for quick qualitative checks and demos.
-
-## 8) Requirements
-
-Main Python packages used:
-
-- torch
+- Python
+- PyTorch
 - torchvision
-- torchinfo
-- split-folders
 - Pillow
 - matplotlib
+- torchinfo
+- split-folders
+- Jupyter Notebook
 
-Optional but recommended:
-
-- jupyter
-- ipykernel
-
-## 9) Environment Setup
-
-Create and activate a virtual environment, then install dependencies.
+## 9) Setup
 
 Linux/macOS:
 
@@ -188,84 +194,91 @@ pip install --upgrade pip
 pip install torch torchvision torchinfo split-folders pillow matplotlib jupyter ipykernel
 ```
 
-If you use CUDA-enabled PyTorch, install torch and torchvision from the official selector page so versions match your CUDA toolkit.
+For GPU training, install CUDA-compatible `torch` and `torchvision` versions from the official PyTorch installation selector.
 
-## 10) How to Run the Project
+## 10) How to Run
 
-1. Place your dataset inside animal_data with one folder per class.
-2. Open Animal-Classifier.ipynb.
+1. Put your class folders inside `animal_data/`.
+2. Open `Animal-Classifier.ipynb`.
 3. Run cells in order:
-	- imports
-	- dataset split generation
+	- imports and configuration
+	- dataset split generation (skip if already prepared)
 	- dataloader creation
-	- model setup
-	- training loop
-	- custom image prediction
+	- model initialization
+	- training/evaluation loop
+	- single-image inference
 
-If dataset_split already exists and you do not want to recreate it each run, skip the splitfolders cell.
+## 11) Results You Should Track
 
-## 11) Recommended Improvements
+At minimum:
 
-For better model quality and maintainability, consider:
+- Final test accuracy
+- Train vs test loss curves
+- Class-wise errors (which classes are confused)
 
-- Add a validation split (train/val/test) and early stopping.
-- Save best model checkpoints during training.
-- Plot learning curves for loss and accuracy.
-- Add confusion matrix and per-class precision/recall/F1.
-- Introduce data augmentation (random crop, flip, color jitter).
-- Perform staged fine-tuning (unfreeze last blocks after warm-up).
-- Add deterministic seeding for reproducibility.
-- Export model for deployment (TorchScript or ONNX).
+For stronger reporting:
 
-## 12) Troubleshooting
+- Confusion matrix
+- Precision/Recall/F1 per class
+- Best checkpoint epoch
 
-Common issues and fixes:
+## 12) Design Decisions
 
-1. RuntimeError: CUDA error or device mismatch  
-	Ensure tensors and model are moved to the same device.
+Why this architecture:
 
-2. FileNotFoundError for dataset paths  
-	Confirm animal_data and dataset_split folder names are correct.
+- MobileNetV2 keeps training and inference efficient.
+- Transfer learning reduces data and compute requirements.
+- Folder-based dataset structure makes adding classes simple.
+- Notebook workflow accelerates experimentation and iteration.
 
-3. ModuleNotFoundError for splitfolders or torchinfo  
-	Install missing package with pip.
+## 13) Known Limitations
 
-4. Notebook runs out of memory  
-	Reduce batch size (for example 128 to 32 or 16).
+- No strict experiment tracking integrated yet.
+- Validation split and early stopping may be missing depending on run setup.
+- Performance can drop with class imbalance or low-quality images.
+- Notebook-first workflow is less production-ready than a script/module layout.
 
-5. Low accuracy  
-	Check data quality, class balance, transform consistency, and train for more epochs.
+## 14) Recommended Next Steps
 
-## 13) Reproducibility Notes
+1. Add deterministic seeding across Python/NumPy/PyTorch.
+2. Add train/val/test separation with early stopping.
+3. Save and load best checkpoints automatically.
+4. Add confusion matrix and class-wise metrics.
+5. Introduce stronger augmentation (flip/crop/color jitter).
+6. Convert notebook pipeline to a reusable training script.
+7. Export model (TorchScript or ONNX) for deployment.
 
-For reproducible experiments:
+## 15) Troubleshooting
 
-- Set random seeds for Python, NumPy, and PyTorch.
-- Keep library versions fixed in a requirements file.
-- Save class_names with checkpoints.
-- Log hyperparameters and final metrics per run.
+1. `RuntimeError` about CUDA/device mismatch
+	- Ensure model and tensors are on the same device.
 
-## 14) FAQ
+2. `FileNotFoundError` for dataset paths
+	- Verify `animal_data/` and `dataset_split/` paths.
 
-Q: Why does the repository include both Animal-Classifier and Facial_Emotion_Recognition notebooks?  
-A: The active code shown here is an animal classifier workflow. If you plan to pivot to facial emotion recognition, adapt the dataset and labels accordingly.
+3. `ModuleNotFoundError` for dependencies
+	- Install missing packages with `pip`.
 
-Q: Can I train on CPU only?  
-A: Yes, but it will be significantly slower than GPU training.
+4. Out-of-memory during training
+	- Reduce batch size (e.g., `128 -> 32` or `16`).
 
-Q: Is dataset_split versioned in git?  
-A: No. It is treated as generated data and excluded by .gitignore.
+5. Low accuracy
+	- Check label quality, class balance, augmentations, and epoch count.
 
-Q: Can I add new classes?  
-A: Yes. Add a new class folder under animal_data and regenerate splits.
+## 16) FAQ
 
-## 15) Acknowledgments
+Q: Why is there also a `Facial_Emotion_Recognition.ipynb` file?
 
-- PyTorch and torchvision teams for excellent tooling
-- Open-source contributors for utilities like split-folders and torchinfo
+A: It is present in the repository, but the active documented workflow in this README is the animal classification pipeline.
 
-If you want, this README can be extended with:
+Q: Can this run on CPU only?
 
-- A requirements.txt file
-- A model checkpoint usage section
-- Ready-to-run training script converted from the notebook
+A: Yes. It works on CPU, but training time will be significantly slower.
+
+Q: Is `dataset_split/` committed to Git?
+
+A: It should be treated as generated output and excluded from version control.
+
+Q: How do I add a new class?
+
+A: Add a new class folder under `animal_data/`, then regenerate the split and retrain.
