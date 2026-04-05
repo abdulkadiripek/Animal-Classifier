@@ -1,7 +1,7 @@
-data/*/*
-data/*.jpg
-data/*.json
-data/*.txt
-data/*.csv
-dataset_split/*
-dataset_split/*.jpg
+animal_data/*/*
+animal_data/*.jpg
+animal_data/*.json
+animal_data/*.txt
+animal_data/*.csv
+dataset_split/
+animal_data/
